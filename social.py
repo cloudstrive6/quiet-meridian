@@ -369,7 +369,7 @@ def due_posts() -> list[dict]:
                 gh("release", "download", tag, "--repo", REPO, "--pattern", "post.json", "--dir", t)
                 out.append(json.loads((Path(t) / "post.json").read_text(encoding="utf-8")) | {"tag": tag})
         except Exception as e:
-            print(f"{ref(tag)}: cannot read post.json, skipped this run: {e}", flush=True)
+            print(f"{ref(tag)}: cannot read post.json, skipped this run ({type(e).__name__})", flush=True)
     return sorted(out, key=lambda p: p["at"])
 
 
