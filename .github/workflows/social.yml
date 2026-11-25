@@ -1,0 +1,53 @@
+name: social
+# Cross-poster: Instagram Reel, TikTok (Post for Me) and Threads video for every short whose slot has passed.
+# Runs twice in the hour after each short slot.
+on:
+  schedule:
+    - cron: "10,40 4,5,18,19 * * *"   # the hour after each short slot (04 or 18 UTC, one short a day): 8 runs a day
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "1 = list what would post, post nothing"
+        default: "0"
+concurrency:
+  group: social
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet "cryptography>=43"
+      - name: Post
+        env:
+          GH_TOKEN: ${{ github.token }}
+          META_PAGE_ACCESS_TOKEN: ${{ secrets.META_PAGE_ACCESS_TOKEN }}
+          META_IG_USER_ID: ${{ secrets.META_IG_USER_ID }}
+          POSTFORME_API_KEY: ${{ secrets.POSTFORME_API_KEY }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_KEY: ${{ secrets.THREADS_KEY }}
+          TIKTOK_HANDLE: ${{ secrets.TIKTOK_HANDLE }}
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+          NOTICE_LABEL: ${{ secrets.NOTICE_LABEL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
+        run: python social.py
+      - name: Push state (retry)
+        if: always()
+        run: |
+          git config user.name poster-bot
+          git config user.email "${{ github.repository_owner_id }}+${{ github.repository_owner }}@users.noreply.github.com"
+          git add state.enc
+          git diff --cached --quiet && exit 0
+          git commit -q -m "social: post state"
+          for i in 1 2 3; do git pull --rebase -q && git push -q && exit 0; sleep 5; done
+          exit 1
