@@ -80,7 +80,7 @@ def telegram(text: str) -> None:
         try:
             req(f"https://api.telegram.org/bot{tok}/sendMessage", {"chat_id": chat, "text": text[:4000]})
         except Exception as e:  # a failed notice must never stop posting
-            print("telegram failed:", e)
+            print("telegram notice failed:", type(e).__name__)
 
 
 STATE = HERE / "state.enc"     # post state, encrypted with STATE_KEY because the repo is public
@@ -103,6 +103,11 @@ def load_state() -> dict:
         return {}
     _LAST = _crypt(STATE.read_bytes().strip(), True).decode("utf-8")
     return json.loads(_LAST)
+
+
+def ref(x: str) -> str:
+    """A short opaque label for a short in the public log."""
+    return "s-" + __import__("hashlib").sha256(x.encode()).hexdigest()[:6]
 
 
 def gh(*args) -> str:
@@ -364,7 +369,7 @@ def due_posts() -> list[dict]:
                 gh("release", "download", tag, "--repo", REPO, "--pattern", "post.json", "--dir", t)
                 out.append(json.loads((Path(t) / "post.json").read_text(encoding="utf-8")) | {"tag": tag})
         except Exception as e:
-            print(f"{tag}: cannot read post.json, skipped this run: {e}", flush=True)
+            print(f"{ref(tag)}: cannot read post.json, skipped this run: {e}", flush=True)
     return sorted(out, key=lambda p: p["at"])
 
 
@@ -404,7 +409,7 @@ def run() -> int:
         st = S.setdefault(p["id"], {})
         try:
             if dt.datetime.fromisoformat(p["at"]) > now:
-                print(f"{p['id']}: not live until {p['at']}")
+                print(f"{ref(p['id'])}: not live until {p['at']}")
                 continue
             jobs = [("instagram", lambda v: instagram_reel(v, p["caption"], st)),
                     ("tiktok", lambda v: tiktok_post(v, p["caption"], st)),
@@ -414,7 +419,7 @@ def run() -> int:
                 todo = [(k, f) for k, f in todo if k != "threads"]   # Threads needs the Reel; it waits for Instagram
             if not todo:
                 continue
-            print(f"{p['id']}: posting {', '.join(k for k, _ in todo)}", flush=True)
+            print(f"{ref(p['id'])}: posting {', '.join(k for k, _ in todo)}", flush=True)
             if DRY:
                 continue
             done += 1
@@ -435,13 +440,13 @@ def run() -> int:
                         n = st[k + "_tries"] = st.get(k + "_tries", 0) + 1
                         st[k + "_next"] = (now + dt.timedelta(minutes=min(720, 30 * 2 ** (n - 1)))).isoformat(timespec="seconds")
                         st[k + "_error"] = str(e)[:500]
-                        print(f"{p['id']}: {k} failed (try {n})", flush=True)
+                        print(f"{ref(p['id'])}: {k} failed (try {n})", flush=True)
                         more = f"next try {st[k + '_next']} UTC" if n < MAX_TRIES else "no more automatic tries"
                         telegram(f"{LABEL}: {k} post of {p['id']} FAILED (try {n}, {more}).\n{e}"[:900])
                     save()
         except Exception as e:      # one broken release must never block the others
             failed += 1
-            print(f"{p['id']}: could not be handled this run", flush=True)
+            print(f"{ref(p['id'])}: could not be handled this run", flush=True)
             telegram(f"{LABEL}: could not handle {p['id']}: {e}"[:900])
     save()
     return 1 if failed else 0
